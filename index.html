@@ -1,0 +1,347 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Galaxy Simulation</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <style>
+        body { 
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        canvas { 
+            display: block; 
+        }
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 5px;
+            max-width: 250px;
+        }
+        .control-group {
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        button {
+            background: #4a6ea9;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        button:hover {
+            background: #5a7eb9;
+        }
+    </style>
+
+<base target="_self">
+
+
+    </head><body><div id="controls">
+        <div class="control-group">
+            <label for="armCount">Spiral Arms: <span id="armCountValue">4</span></label>
+            <input type="range" id="armCount" min="1" max="6" step="1" value="4">
+        </div>
+        <div class="control-group">
+            <label for="armTightness">Arm Tightness: <span id="armTightnessValue">0.5</span></label>
+            <input type="range" id="armTightness" min="0.1" max="1" step="0.1" value="0.5">
+        </div>
+        <div class="control-group">
+            <label for="coreDensity">Core Density: <span id="coreDensityValue">0.7</span></label>
+            <input type="range" id="coreDensity" min="0.1" max="1" step="0.1" value="0.7">
+        </div>
+        <div class="control-group">
+            <label for="rotationSpeed">Rotation Speed: <span id="rotationSpeedValue">0.5</span></label>
+            <input type="range" id="rotationSpeed" min="0" max="1" step="0.1" value="0.5">
+        </div>
+        <div class="control-group">
+            <label for="colorScheme">Color Scheme:</label>
+            <select id="colorScheme">
+                <option value="blue">Blue Nebula</option>
+                <option value="purple">Purple Galaxy</option>
+                <option value="golden">Golden Spiral</option>
+                <option value="red">Red Giant</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <button id="randomize">Randomize</button>
+            <button id="reset">Reset</button>
+        </div>
+    </div>
+
+    <script>
+        // Main variables
+        let scene, camera, renderer, galaxy, controls;
+        let stars = [];
+        let rotationAngle = 0;
+        let mouseX = 0, mouseY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = window.innerHeight / 2;
+
+        // Galaxy parameters
+        const params = {
+            armCount: 4,
+            armTightness: 0.5,
+            coreDensity: 0.7,
+            rotationSpeed: 0.5,
+            colorScheme: 'blue',
+            starCount: 5000
+        };
+
+        // Color palettes
+        const colorPalettes = {
+            blue: {
+                core: new THREE.Color(0x4a6ea9),
+                arms: new THREE.Color(0x5a8cff),
+                stars: new THREE.Color(0x8cb3ff)
+            },
+            purple: {
+                core: new THREE.Color(0x6a4a9c),
+                arms: new THREE.Color(0x9c5aff),
+                stars: new THREE.Color(0xc58cff)
+            },
+            golden: {
+                core: new THREE.Color(0x9c7c4a),
+                arms: new THREE.Color(0xffc55a),
+                stars: new THREE.Color(0xffe08c)
+            },
+            red: {
+                core: new THREE.Color(0x9c4a4a),
+                arms: new THREE.Color(0xff5a5a),
+                stars: new THREE.Color(0xff8c8c)
+            }
+        };
+
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 30;
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Create galaxy
+            createGalaxy();
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onMouseMove);
+
+            // Setup UI controls
+            setupControls();
+
+            // Start animation loop
+            animate();
+        }
+
+        // Create the galaxy particle system
+        function createGalaxy() {
+            if (galaxy) {
+                scene.remove(galaxy);
+                galaxy.geometry.dispose();
+                galaxy.material.dispose();
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(params.starCount * 3);
+            const colors = new Float32Array(params.starCount * 3);
+            const sizes = new Float32Array(params.starCount);
+
+            const palette = colorPalettes[params.colorScheme];
+
+            for (let i = 0; i < params.starCount; i++) {
+                // Position stars in spiral arms
+                const arm = Math.floor(i / (params.starCount / params.armCount)) % params.armCount;
+                const angle = arm * (Math.PI * 2 / params.armCount) + Math.random() * 0.2;
+                const radius = Math.pow(Math.random(), params.coreDensity) * 20;
+                const tightness = params.armTightness * 5;
+
+                const x = Math.cos(angle + radius * tightness) * radius;
+                const y = Math.sin(angle + radius * tightness) * radius;
+                const z = (Math.random() - 0.5) * 5;
+
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+
+                // Color based on distance from center
+                const distanceFactor = radius / 20;
+                const starColor = new THREE.Color().lerpColors(
+                    palette.core,
+                    palette.arms,
+                    distanceFactor
+                );
+
+                colors[i * 3] = starColor.r;
+                colors[i * 3 + 1] = starColor.g;
+                colors[i * 3 + 2] = starColor.b;
+
+                // Random size
+                sizes[i] = Math.random() * 2;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.1,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                sizeAttenuation: true
+            });
+
+            galaxy = new THREE.Points(geometry, material);
+            scene.add(galaxy);
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Rotate galaxy
+            rotationAngle += 0.001 * params.rotationSpeed;
+            galaxy.rotation.z = rotationAngle;
+
+            // Slight tilt based on mouse position
+            galaxy.rotation.x = mouseY * 0.0005;
+            galaxy.rotation.y = mouseX * 0.0005;
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+        }
+
+        // Track mouse movement
+        function onMouseMove(event) {
+            mouseX = (event.clientX - windowHalfX);
+            mouseY = (event.clientY - windowHalfY);
+        }
+
+        // Setup UI controls
+        function setupControls() {
+            // Arm count
+            const armCountSlider = document.getElementById('armCount');
+            const armCountValue = document.getElementById('armCountValue');
+            armCountSlider.addEventListener('input', function() {
+                params.armCount = parseInt(this.value);
+                armCountValue.textContent = this.value;
+                createGalaxy();
+            });
+
+            // Arm tightness
+            const armTightnessSlider = document.getElementById('armTightness');
+            const armTightnessValue = document.getElementById('armTightnessValue');
+            armTightnessSlider.addEventListener('input', function() {
+                params.armTightness = parseFloat(this.value);
+                armTightnessValue.textContent = this.value;
+                createGalaxy();
+            });
+
+            // Core density
+            const coreDensitySlider = document.getElementById('coreDensity');
+            const coreDensityValue = document.getElementById('coreDensityValue');
+            coreDensitySlider.addEventListener('input', function() {
+                params.coreDensity = parseFloat(this.value);
+                coreDensityValue.textContent = this.value;
+                createGalaxy();
+            });
+
+            // Rotation speed
+            const rotationSpeedSlider = document.getElementById('rotationSpeed');
+            const rotationSpeedValue = document.getElementById('rotationSpeedValue');
+            rotationSpeedSlider.addEventListener('input', function() {
+                params.rotationSpeed = parseFloat(this.value);
+                rotationSpeedValue.textContent = this.value;
+            });
+
+            // Color scheme
+            const colorSchemeSelect = document.getElementById('colorScheme');
+            colorSchemeSelect.addEventListener('change', function() {
+                params.colorScheme = this.value;
+                createGalaxy();
+            });
+
+            // Randomize button
+            document.getElementById('randomize').addEventListener('click', function() {
+                params.armCount = Math.floor(Math.random() * 5) + 2;
+                params.armTightness = Math.random() * 0.9 + 0.1;
+                params.coreDensity = Math.random() * 0.9 + 0.1;
+                params.rotationSpeed = Math.random();
+                
+                const colorSchemes = Object.keys(colorPalettes);
+                params.colorScheme = colorSchemes[Math.floor(Math.random() * colorSchemes.length)];
+
+                // Update UI
+                armCountSlider.value = params.armCount;
+                armCountValue.textContent = params.armCount;
+                armTightnessSlider.value = params.armTightness;
+                armTightnessValue.textContent = params.armTightness;
+                coreDensitySlider.value = params.coreDensity;
+                coreDensityValue.textContent = params.coreDensity;
+                rotationSpeedSlider.value = params.rotationSpeed;
+                rotationSpeedValue.textContent = params.rotationSpeed.toFixed(1);
+                colorSchemeSelect.value = params.colorScheme;
+
+                createGalaxy();
+            });
+
+            // Reset button
+            document.getElementById('reset').addEventListener('click', function() {
+                params.armCount = 4;
+                params.armTightness = 0.5;
+                params.coreDensity = 0.7;
+                params.rotationSpeed = 0.5;
+                params.colorScheme = 'blue';
+
+                // Update UI
+                armCountSlider.value = params.armCount;
+                armCountValue.textContent = params.armCount;
+                armTightnessSlider.value = params.armTightness;
+                armTightnessValue.textContent = params.armTightness;
+                coreDensitySlider.value = params.coreDensity;
+                coreDensityValue.textContent = params.coreDensity;
+                rotationSpeedSlider.value = params.rotationSpeed;
+                rotationSpeedValue.textContent = params.rotationSpeed;
+                colorSchemeSelect.value = params.colorScheme;
+
+                createGalaxy();
+            });
+        }
+
+        // Start the application
+        init();
+    </script>
+
+              
+          
+                
+          
+              
+</body></html>
